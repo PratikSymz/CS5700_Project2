@@ -181,5 +181,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # Pass args to start() methods
     WebCrawler()
-    # WebCrawler.start(str(args.USERNAME).strip(), str(args.PASSWORD).strip())
-    WebCrawler.start('budhiraja.p', 'UWFKKWSVREIM2LN8')
+    WebCrawler.start(str(args.USERNAME).strip(), str(args.PASSWORD).strip())
