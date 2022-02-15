@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from html.parser import HTMLParser
 
 """ Helper class inheriting and implementing the HTMLParser library methods 
