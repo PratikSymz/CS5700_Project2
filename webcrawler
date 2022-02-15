@@ -1,0 +1,8 @@
+# Extract [username] and [password] from command line argument
+username=$1
+password=$2
+
+# Runs the main program
+python main.py $username $password 
+
+exit 0

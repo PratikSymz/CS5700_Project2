@@ -1,0 +1,22 @@
+In Project 2: Web Crawler, I was introduced to the concept of web crawler programming. Our ongoing series of lectures enabled me to understand the underlying concepts of the Network layer.
+
+High-level Approach: 
+I started with going through the "HTTP Made Really Easy" link from the project description, enabling me to understand the structure of the HTTP messages to communicate to the Fakebook server. From our past assignment, Project 1: Simple Client, working with Sockets gave me the experience I needed to establish a connection with the server.
+
+In order to get an idea of the HTTP message structure that was needed to send to the server, I logged in to the Fakebook server using the given credentials. I monitored the 'Network' tab in the Chrome 'inspect' tool at each request. I had a couple of observations; firstly, I would need a CSRF token in the GET request header to log in to the server. Making a simple GET request to the homepage enabled me to retrieve that from the raw header; next, once logged in, the response header provides the Session ID, which I would need to crawl the pages; however, it also provides an updated CSRF token. Hence, I retrieve the updated CSRF token and Session ID after every request. Additionally, I had to manage the response codes sent by the server appropriately for web crawling.
+
+After logging in, I started crawling all the current web page links and stored them in a queue. To redundantly avoid crawling, the logic checks whether the currently seen link has already been crawled or is already in the queue, waiting to be crawled. Additionally, I use the allowed "html.parser" library to parse the raw HTML of each webpage for links to new webpages or the 'h2' tag containing the secret flag. The code repeats crawling, checking response codes, and taking appropriate action until all five flags have been caught.
+
+Edge cases such as the 'Connection: close' header information are handled appropriately. The program produces output as per the specification - 5 secret_flags
+
+
+Challenges Faced: 
+The primary challenge was the manual HTTP response handling. Having used third-party libraries to manage the lower-level details, dealing with these details manually was a real head-scratcher. Even after parsing the raw HTTP responses, there were many obstacles to manage. I was primarily receiving the 302 error from the server, causing my queue to fill with nearly 70,000 links yesterday. After breakpoints in my code, I noticed that I was receiving this code every time I tried to crawl a Fakebook profile which redirected me back to the homepage and was stuck in a loop. After asking for help from Piazza, I understood that I had to update my CSRF token and Session ID after every HTTP request. After resolving this issue, I moved forward without any significant problems.
+
+
+Code Testing: 
+1. For producing the 4xx error, I put incorrect URLs like "/fakebook/Elinore Hosman/" and "/facebook/879687962/" in the queue. The code managed these cases appropriately, dropped these URLs from the queue, and started crawling the following correct URL.
+
+2. For producing the 5xx error, I sent an incorrectly structured POST request to the server to check if the server provided the appropriate response. For instance, I sent the incorrect username and passwords in the header payload to produce the 500 error. Breakpoints in the code showed that the code was handling this case appropriately and retrying the request.
+
+3. Finally, after each crawl, I printed the length of the queue, crawled pages, and the secret_flags data structures. In the best case, the flags were printed out after crawling about 2,500 links and, in the worst, about 8000 links.
