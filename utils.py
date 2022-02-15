@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import sys
 
 """ Constant set of fields to use for logging in to the server """
@@ -17,6 +15,9 @@ CONN_ALIVE_HEADER = 'Connection: keep-alive'
 
 # MAX Message Buffer length
 BUFFER_SIZE = 4096
+
+# Message encode and decode format
+FORMAT = 'utf-8'
 
 """ Helper method to build HTTP GET request using the url, updated CSRF Token and Session ID. """
 def build_GET_request(url, csrf_token, session_id):
@@ -68,13 +69,13 @@ def get_CSRF_token(socket):
 def request_respond(socket, http_message):
     # Send message to server
     try: 
-        socket.send(http_message)
+        socket.send(http_message.encode(FORMAT))
     except:
         # IO Exception with socket stream
         close_stream(socket)
-        sys.exit("LOL" + "\n")
+        sys.exit("IO Exception" + "\n")
     
-    return socket.recv(BUFFER_SIZE)
+    return socket.recv(BUFFER_SIZE).decode(FORMAT)
 
 """ Helper function to parse HTTP response to raw Headers and HTML data"""
 def parse_response(response):
