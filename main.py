@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import socket, ssl, argparse, sys, utils
 from frontier_finder import FrontierFinder
 
@@ -106,7 +104,7 @@ class WebCrawler:
             headers = utils.parse_headers(raw_headers)
 
             # Update CSRF Token and Session ID from the response headers
-            if (headers.has_key('Set-Cookie')):
+            if ('Set-Cookie' in headers):
                 csrf_token = utils.get_cookie_id(headers, 'csrftoken')
                 session_id = utils.get_cookie_id(headers, 'sessionid')
 
@@ -116,7 +114,7 @@ class WebCrawler:
                 break
 
             # Check for Connection CLOSE
-            if (headers.has_key('Connection') and headers['Connection'] == 'close'):
+            if (('Connection' in headers) and headers['Connection'] == 'close'):
                 # Close current socket
                 utils.close_stream(WebCrawler.client_socket_ssl)
                 
@@ -183,4 +181,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # Pass args to start() methods
     WebCrawler()
-    WebCrawler.start(str(args.USERNAME), str(args.PASSWORD))
+    # WebCrawler.start(str(args.USERNAME).strip(), str(args.PASSWORD).strip())
+    WebCrawler.start('budhiraja.p', 'UWFKKWSVREIM2LN8')
