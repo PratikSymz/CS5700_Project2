@@ -3,6 +3,6 @@ username=$1
 password=$2
 
 # Runs the main program
-python main.py $username $password 
+python3 main.py $username $password 
 
 exit 0
