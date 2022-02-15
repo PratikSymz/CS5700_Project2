@@ -1,184 +1,128 @@
-import socket, ssl, argparse, sys, utils
-from frontier_finder import FrontierFinder
+import sys
 
+""" Constant set of fields to use for logging in to the server """
+LOGIN_URL = '/accounts/login/'
+NEXT_URL = '?next=/fakebook/'
+HTTP_VERSION = 'HTTP/1.1'
 
-""" Main class to manage the server login and subsequent message collection
-    1. Initialize the ssl socket and connect to the project hostname and the port. 
-    2. start(): This method is the main method that:
-        a. Collects the CSRF Token from the server by making the first GET request from the raw header information
-        b. Initiates server login by sending the username and password as payload
-        c. Collects the new CSRF Token and Session ID from the raw headers
-        d. Runs a loop until the flag list length is full (5)
-        e. In each cycle, the program collects the response code from the HTTP response, repeats step c. and takes appropriate action
-        f. After detecting a specific response, it sends a HTTP response with the next action, and the cycle repeats again.
-        g. If in a specific cycle, the server send a 'Connection: close' request, the program reestablishes 
-            the socket connection again and resumes the program.
-    """
-class WebCrawler:
-    """ Constant set of fields to use in connecting with socket """
-    BASE_URL = 'project2.5700.network'
-    PORT_NO = 443 # Default for HTTP requests
-   
-    # The SSL Client Socket 
-    client_socket_ssl = None
+""" Constant set of fields to use in HTTP request headers """
+HOST_NAME_HEADER = 'Host: project2.5700.network'
+CSRF_HEADER = 'Cookie: csrftoken='
+SESSION_ID_HEADER = 'sessionid='
+CONTENT_TYPE_HEADER = 'Content-Type: application/x-www-form-urlencoded'
+CONTENT_LENGTH_HEADER = 'Content-Length: '
+CONN_ALIVE_HEADER = 'Connection: keep-alive'
 
-    # Crawlable links domain name
-    DOMAIN_NAME = '/fakebook/'
+# MAX Message Buffer length
+BUFFER_SIZE = 4096
 
-    # Flag to maintain last url that was popped from the queue and eventually generated 5xx code
-    url_last_seen = ''
+# Message encode and decode format
+FORMAT = 'utf-8'
 
-    """ Initiate ssl socket connection """
-    def __init__(self):
-        try:
-            # Set up Socket
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # Wrap Socket in SSL format, based on script input
-            # Set up Handshake to establish security attributes (cipher suite) and, a valid session to read/write application data
-            WebCrawler.client_socket_ssl = ssl.wrap_socket(client_socket, ssl_version=ssl.PROTOCOL_TLS)
-            
-            # Connect with socket
-            addr = WebCrawler.BASE_URL, WebCrawler.PORT_NO
-            WebCrawler.client_socket_ssl.connect(addr)
-        except:
-            # Can't connect with socket
-            utils.close_stream(WebCrawler.client_socket_ssl)
-            sys.exit("Can't connect with socket! Timeout " + "\n")
+""" Helper method to build HTTP GET request using the url, updated CSRF Token and Session ID. """
+def build_GET_request(url, csrf_token, session_id):
+    message_lines = [
+        'GET ' + url + ' ' + HTTP_VERSION, 
+        HOST_NAME_HEADER,
+        CONN_ALIVE_HEADER
+    ]
     
-    """ Main method: Refer Step 2 in comments """
-    @staticmethod
-    def start(username, password):
-        # Get initial CSRF Token
-        csrf_token = utils.get_CSRF_token(WebCrawler.client_socket_ssl)
+    cookie_message = ''
+    if (not (csrf_token == '')):
+        cookie_message += CSRF_HEADER + csrf_token
+        if (not (session_id == '')):
+            cookie_message += '; ' + SESSION_ID_HEADER + session_id
+        message_lines.append(cookie_message)
+    
+    return '\r\n'.join(message_lines) + '\r\n\r\n'
 
-        # Login using this CSRF token
-        # HTTP 'POST' message to log in to the Fakebook server
-        http_message = utils.build_login_message(username, password, csrf_token)
-        
-        # Send message to server and retrieve response
-        response = utils.request_respond(WebCrawler.client_socket_ssl, http_message)
-        # Split raw Headers and HTML data
-        raw_headers, raw_HTML = utils.parse_response(response)
-        # Parse raw headers and make a header table
-        headers = utils.parse_headers(raw_headers)
-        
-        # Retrieve the new CSRF Token and Session ID after Login
-        csrf_token = utils.get_cookie_id(headers, 'csrftoken')
-        session_id = utils.get_cookie_id(headers, 'sessionid')
+""" Helper method to build the login HTTP POST request using the username, password and the updated CSRF Token. """
+def build_login_message(username, password, csrf_token):
+    content = ('username=' + username + '&' + 'password=' + password + '&' 
+    + 'csrfmiddlewaretoken=' + csrf_token + '&' + 'next=%2Ffakebook%2F')
+    
+    message_lines = [
+        'POST ' + LOGIN_URL + NEXT_URL + ' ' + HTTP_VERSION, 
+        HOST_NAME_HEADER, 
+        CSRF_HEADER + csrf_token, 
+        CONTENT_TYPE_HEADER, 
+        CONTENT_LENGTH_HEADER + str(len(content))
+    ]
+    
+    # HTTP request payload
+    return '\r\n'.join(message_lines) + '\r\n\r\n' + content + '\r\n\r\n'
 
-        while (len(FrontierFinder.flags_secret) < 5):
-            # Check HTTP Status Code from the raw HTML data
-            response_code = utils.get_response_code(raw_headers)
+""" Helper method to retrieve the initial CSRF Token for Login Homepage """
+def get_CSRF_token(socket):
+    # Send GET message and receive response from server
+    http_message = build_GET_request(LOGIN_URL, '', '')
+    response = request_respond(socket, http_message)
+    
+    # Split raw Headers and HTML data
+    raw_headers, raw_HTML = parse_response(response)
+    # Parse raw headers
+    headers = parse_headers(raw_headers)
+    
+    return get_cookie_id(headers, 'csrftoken')
 
-            # Handle Status Codes:
-            # 1. 200 - Response OK
-            if (response_code in range(200, 299 + 1)):
-                # Parse the raw HTML data
-                frontier_finder = FrontierFinder()
-                frontier_finder.feed(raw_HTML)
-                # Set request message as to crawl the links after successful HTML parsing
-                http_message = WebCrawler.crawl_page(csrf_token, session_id)
-            
-            # 2. 301 - Moved Permanently and 302 - Not Found [Redirect]
-            if (response_code in range(300, 399 + 1)):
-                # Redirected to new page and retrieve new URL path
-                new_url = headers['Location']
-                # Set request message to redirect to new url path
-                http_message = utils.build_GET_request(new_url, csrf_token, session_id)
+""" Helper method to send http request message to the server and retrieve the corresponding response """
+def request_respond(socket, http_message):
+    # Send message to server
+    try: 
+        socket.send(http_message.encode(FORMAT))
+    except:
+        # IO Exception with socket stream
+        close_stream(socket)
+        sys.exit("IO Exception" + "\n")
+    
+    return socket.recv(BUFFER_SIZE).decode(FORMAT)
 
-            # 3. 403 - Forbidden and 404 - Not Found [Abandon URL]
-            elif (response_code in range(400, 499 + 1)):
-                # Ignore this response (as per the specification) and crawl next link in queue
-                http_message = WebCrawler.crawl_page(csrf_token, session_id)
-            
-            # 4. 500 - Internal Server Error and 503 - Service Unavailable [Retry]
-            elif (response_code in range(500, 599 + 1)):
-                # In this case, try crawling again
-                http_message = utils.build_GET_request(WebCrawler.url_last_seen, csrf_token, session_id)
-            
-            # Send http request messages to the server
-            response = utils.request_respond(WebCrawler.client_socket_ssl, http_message)
-            # Split raw Headers and HTML data
-            raw_headers, raw_HTML = utils.parse_response(response)
-            # Parse raw headers
-            headers = utils.parse_headers(raw_headers)
+""" Helper function to parse HTTP response to raw Headers and HTML data"""
+def parse_response(response):
+    sections = response.split('\r\n\r\n')
+    # sections[0] - raw Headers, sections[1] - raw HTML data
+    # The response is only HTTP Headers (i.e., just after log in)
+    if (len(sections) < 2):
+        return sections[0], ''
+    
+    return sections[0], sections[1]
 
-            # Update CSRF Token and Session ID from the response headers
-            if ('Set-Cookie' in headers):
-                csrf_token = utils.get_cookie_id(headers, 'csrftoken')
-                session_id = utils.get_cookie_id(headers, 'sessionid')
+""" Helper function to parse raw HTTP headers to key-value pair table """
+def parse_headers(rawheaders):
+    # Header dictionary
+    headers = {}
+    lines = rawheaders.splitlines()[1:]
 
-            # Before checking for connnection close, check if I already have all the flags
-            # Save code from extra effort to reconnect with the socket
-            if (FrontierFinder.flags_secret == 5): 
-                break
+    for line in lines:
+        header = line.split(': ')
+        # Add each header title and value to the dictionary
+        # If header already exists - 'Set-Cookie' for CSRF and Session ID - Then merge the both
+        if (header[0] in headers):
+            headers[header[0]] = headers.get(header[0]) + '\n' + header[1]
+        else:
+            headers[header[0]] = header[1]
+    
+    return headers
 
-            # Check for Connection CLOSE
-            if (('Connection' in headers) and headers['Connection'] == 'close'):
-                # Close current socket
-                utils.close_stream(WebCrawler.client_socket_ssl)
-                
-                # Reestablish connection with the socket
-                while True:
-                    try:
-                        # Set up Socket
-                        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        # Wrap Socket in SSL format, based on script input
-                        # Set up Handshake to establish security attributes (cipher suite) and, a valid session to read/write application data
-                        WebCrawler.client_socket_ssl = ssl.wrap_socket(client_socket, ssl_version=ssl.PROTOCOL_TLS)
-                        
-                        # Connect with socket
-                        addr = WebCrawler.BASE_URL, WebCrawler.PORT_NO
-                        WebCrawler.client_socket_ssl.connect(addr)
+""" Helper method to retrieve Cookie ID - CSRF or Session ID from the parsed headers """
+def get_cookie_id(headers, cookie_type):
+    # Retrieve the CSRF Token or Session ID
+    cookie = headers['Set-Cookie']
+    # Find first and last index of the csrf or session id
+    cookie_start = cookie.find(cookie_type + '=') + len(cookie_type + '=')
+    cookie_end = cookie.find(';', cookie_start)
+    
+    return cookie[cookie_start : cookie_end]
 
-                        # Once socket connection established, continue with web crawling
-                        break
-                    except:
-                        # Can't connect with socket
-                        pass
-        
-        # Flags complete
-        print('\n'.join(FrontierFinder.flags_secret))
-        # Close socket
-        utils.close_stream(WebCrawler.client_socket_ssl)
+""" Helper method to retrieve response code from raw HTTP header information """
+def get_response_code(raw_headers):
+    # Default code: Server Error - try again
+    response_code = 500
+    if (len(raw_headers) > 0):
+        response_code = int(raw_headers.splitlines()[0].split()[1])
+    
+    return response_code
 
-
-    """ Helper method that returns the http message to crawl the next url in the queue
-        At each step it checks if the url is a 'Fakebook' url,
-            1. If yes, remove it from the queue and add it to the crawled links list, and then crawl this link
-            2. If not, ignore and remove url from another website from the queue.
-    """
-    @staticmethod
-    def crawl_page(csrf_token, session_id):
-        # Crawl links until we find a link that we can crawl further - exit loop
-        # Otherwise, remove the unrecognized url
-        
-        while (True):
-            url = FrontierFinder.frontier_queue[0]
-            WebCrawler.url_last_seen = url
-
-            # We only crawl Fakebook links
-            if (WebCrawler.DOMAIN_NAME in url):
-                FrontierFinder.frontier_queue.pop(0)
-                FrontierFinder.frontier_crawled.add(url)
-                http_message = utils.build_GET_request(url, csrf_token, session_id)
-                break
-
-            else:
-                FrontierFinder.frontier_queue.pop(0)
-        
-        return http_message
-
-
-""" Script argument parser """
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser('Project 2: Web Crawler')
-
-    # Store Username and Password from terminal
-    parser.add_argument('USERNAME', action='store', type=str, help='[username]')    # Store value from input
-    parser.add_argument('PASSWORD', action='store', type=str, help='[password]')    # Store value from input
-
-    args = parser.parse_args()
-    # Pass args to start() methods
-    WebCrawler()
-    WebCrawler.start(str(args.USERNAME).strip(), str(args.PASSWORD).strip())
+""" Helper function to close socket """
+def close_stream(socket):
+    socket.close()
